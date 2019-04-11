@@ -157,6 +157,10 @@ function loadFont (item, callback) {
     });
 }
 
+function loadCompressedTex (item) {
+    return item.content;
+}
+
 cc.loader.addDownloadHandlers({
     // JS
     'js' : downloadScript,
@@ -173,7 +177,7 @@ cc.loader.addDownloadHandlers({
     'webp' : downloadImage,
     'image' : downloadImage,
     'pvr' : downloadImage,
-    'etc' : downloadImage,
+    'pkm' : downloadImage,
 
     // Audio
     'mp3' : downloadAudio,
@@ -220,4 +224,8 @@ cc.loader.addLoadHandlers({
     'wav' : loadAudio,
     'mp4' : loadAudio,
     'm4a' : loadAudio,
+
+    // compressed texture
+    'pvr': loadCompressedTex,
+    'pkm': loadCompressedTex,
 });

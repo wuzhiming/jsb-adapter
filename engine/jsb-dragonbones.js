@@ -26,6 +26,19 @@
     if (window.dragonBones === undefined || window.middleware === undefined) return;
     if (dragonBones.DragonBonesAtlasAsset === undefined) return;
 
+    // dragonbones global time scale.
+    Object.defineProperty(dragonBones, 'timeScale', {
+        get () {
+            return this._timeScale;
+        },
+        set (value) {
+            this._timeScale = value;
+            let factory = this.CCFactory.getInstance();
+            factory.setTimeScale(value);
+        },
+        configurable: true,
+    });
+
     ////////////////////////////////////////////////////////////
     // override dragonBones library by native dragonBones
     ////////////////////////////////////////////////////////////
@@ -51,10 +64,10 @@
     // native factory
     //-------------------
 
-    var factoryProto = dragonBones.CCFactory.prototype;
+    let factoryProto = dragonBones.CCFactory.prototype;
     factoryProto.createArmatureNode = function (comp, armatureName, node) {
         node = node || new cc.Node();
-        var display = node.getComponent(dragonBones.ArmatureDisplay);
+        let display = node.getComponent(dragonBones.ArmatureDisplay);
         if (!display) {
             display = node.addComponent(dragonBones.ArmatureDisplay);
         }
@@ -72,7 +85,7 @@
     //-------------------
     // native armature
     //-------------------
-    var armatureProto = dragonBones.Armature.prototype;
+    let armatureProto = dragonBones.Armature.prototype;
     Object.defineProperty(armatureProto, 'animation', {
         get () {
             return this.getAnimation();
@@ -108,7 +121,7 @@
     //--------------------------
     // native CCArmatureDisplay
     //--------------------------
-    var nativeArmatureDisplayProto = dragonBones.CCArmatureDisplay.prototype;
+    let nativeArmatureDisplayProto = dragonBones.CCArmatureDisplay.prototype;
 
     Object.defineProperty(nativeArmatureDisplayProto,"node",{
         get : function () {
@@ -117,15 +130,15 @@
     });
 
     nativeArmatureDisplayProto.getRootNode = function () {
-        var rootDisplay = this.getRootDisplay();
+        let rootDisplay = this.getRootDisplay();
         return rootDisplay && rootDisplay._ccNode;
     };
 
     nativeArmatureDisplayProto.convertToWorldSpace = function (point) {
-        var newPos = this.convertToRootSpace(point);
-        var ccNode = this.getRootNode();
+        let newPos = this.convertToRootSpace(point);
+        let ccNode = this.getRootNode();
         if (!ccNode) return newPos;
-        var finalPos = ccNode.convertToWorldSpace(newPos);
+        let finalPos = ccNode.convertToWorldSpace(newPos);
         return finalPos;
     };
 
@@ -160,7 +173,7 @@
     //-------------------
     // native slot
     //-------------------
-    var slotProto = dragonBones.Slot.prototype;
+    let slotProto = dragonBones.Slot.prototype;
     Object.defineProperty(slotProto, 'childArmature', {
         get () {
             return this.getChildArmature();
@@ -185,7 +198,7 @@
     //------------------------
     // native TransformObject
     //------------------------
-    var transformObjectProto = dragonBones.TransformObject.prototype;
+    let transformObjectProto = dragonBones.TransformObject.prototype;
     Object.defineProperty(transformObjectProto, 'global', {
         get () {
             return this.getGlobal();
@@ -207,15 +220,15 @@
     ////////////////////////////////////////////////////////////
     // override DragonBonesAtlasAsset
     ////////////////////////////////////////////////////////////
-    var dbAtlas = dragonBones.DragonBonesAtlasAsset.prototype;
-    var gTextureIdx = 0;
-    var textureKeyMap = {};
-    var textureMap = new WeakMap();
-    var textureIdx2Name = {};
+    let dbAtlas = dragonBones.DragonBonesAtlasAsset.prototype;
+    let gTextureIdx = 0;
+    let textureKeyMap = {};
+    let textureMap = new WeakMap();
+    let textureIdx2Name = {};
 
     dbAtlas.recordTexture = function () {
         if (this._texture && this._oldTexture !== this._texture) {
-            var texKey = textureKeyMap[gTextureIdx] = {key:gTextureIdx};
+            let texKey = textureKeyMap[gTextureIdx] = {key:gTextureIdx};
             textureMap.set(texKey, this._texture);
             this._oldTexture = this._texture;
             this._texture.__textureIndex__ = gTextureIdx;
@@ -224,22 +237,22 @@
     };
 
     dbAtlas.getTextureByIndex = function (textureIdx) {
-        var texKey = textureKeyMap[textureIdx];
+        let texKey = textureKeyMap[textureIdx];
         if (!texKey) return;
         return textureMap.get(texKey);
     };
 
     dbAtlas.updateTextureAtlasData = function (factory) {
-        var url = this._texture.url;
-        var preAtlasInfo = textureIdx2Name[url];
-        var index;
+        let url = this._texture.url;
+        let preAtlasInfo = textureIdx2Name[url];
+        let index;
 
         // If the texture has store the atlas info before,then get native atlas object,and 
         // update script texture map.
         if (preAtlasInfo) {
             index = preAtlasInfo.index;
             this._textureAtlasData = factory.getTextureAtlasDataByIndex(preAtlasInfo.name,index);
-            var texKey = textureKeyMap[preAtlasInfo.index];
+            let texKey = textureKeyMap[preAtlasInfo.index];
             textureMap.set(texKey, this._texture);
             this._texture.__textureIndex__ = index;
             // If script has store the atlas info,but native has no atlas object,then
@@ -264,6 +277,13 @@
 
     dbAtlas.init = function (factory) {
         this._factory = factory;
+
+        // If create by manual, uuid is empty.
+        if (!this._uuid) {
+            let atlasJsonObj = JSON.parse(this.atlasJson);
+            this._uuid = atlasJsonObj.name;
+        }
+
         if (this._textureAtlasData) {
             factory.addTextureAtlasData(this._textureAtlasData, this._uuid);
         }
@@ -284,10 +304,17 @@
     ////////////////////////////////////////////////////////////
     // override DragonBonesAsset
     ////////////////////////////////////////////////////////////
-    var dbAsset = dragonBones.DragonBonesAsset.prototype;
+    let dbAsset = dragonBones.DragonBonesAsset.prototype;
 
     dbAsset.init = function (factory, atlasUUID) {
         this._factory = factory;
+
+        // If create by manual, uuid is empty.
+        // Only support json format, if remote load dbbin, must set uuid by manual.
+        if (!this._uuid && this.dragonBonesJson) {
+            let rawData = JSON.parse(this.dragonBonesJson);
+            this._uuid = rawData.name;
+        }
 
         let armatureKey = this._uuid + "#" + atlasUUID;
         let dragonBonesData = this._factory.getDragonBonesData(armatureKey);
@@ -297,7 +324,7 @@
         if (this.dragonBonesJson) {
             filePath = this.dragonBonesJson;
         } else {
-            filePath = cc.loader.md5Pipe ? cc.loader.md5Pipe.transformURL(this.nativeUrl, true) : this.nativeUrl;
+            filePath = cc.loader.md5Pipe ? cc.loader.md5Pipe.transformURL(this.nativeUrl) : this.nativeUrl;
         }
         this._factory.parseDragonBonesDataByPath(filePath, armatureKey);
         return armatureKey;
@@ -312,14 +339,11 @@
     ////////////////////////////////////////////////////////////
     // override ArmatureDisplay
     ////////////////////////////////////////////////////////////
-    var armatureDisplayProto = dragonBones.ArmatureDisplay.prototype;
-    var assembler = dragonBones.ArmatureDisplay._assembler;
-    var renderCompProto = cc.RenderComponent.prototype;
-    var RenderFlow = cc.RenderFlow;
-    var renderer = cc.renderer;
-    var renderEngine = renderer.renderEngine;
-    var gfx = renderEngine.gfx;
-    var VertexFormat = gfx.VertexFormat;
+    let armatureDisplayProto = dragonBones.ArmatureDisplay.prototype;
+    let assembler = dragonBones.ArmatureDisplay._assembler;
+    let renderCompProto = cc.RenderComponent.prototype;
+    let gfx = cc.gfx;
+    let VertexFormat = gfx.VertexFormat;
 
     Object.defineProperty(armatureDisplayProto, 'armatureName', {
         get () {
@@ -327,7 +351,7 @@
         },
         set (value) {
             this._armatureName = value;
-            var animNames = this.getAnimationNames(this._armatureName);
+            let animNames = this.getAnimationNames(this._armatureName);
 
             if (!this.animationName || animNames.indexOf(this.animationName) < 0) {
                 this.animationName = '';
@@ -377,7 +401,7 @@
     });
 
     armatureDisplayProto._clearRenderData = function () {
-        this._materialData = undefined;
+        this._renderInfoOffset = undefined;
         this._nativeDisplay = undefined;
     };
 
@@ -409,21 +433,44 @@
         this._armature = this._nativeDisplay.armature();
         this._armature.animation.timeScale = this.timeScale;
         
-        this._materialData = this._nativeDisplay.getMaterialData();
+        this._renderInfoOffset = this._nativeDisplay.getRenderInfoOffset();
 
         if (this.animationName) {
             this.playAnimation(this.animationName, this.playTimes);
         }
     };
 
+    armatureDisplayProto._activateMaterial = function () {
+        let texture = this.dragonAtlasAsset && this.dragonAtlasAsset.texture;
+        if (!texture) {
+            this.disableRender();
+            return;
+        }
+
+        // Get material
+        let material = this.sharedMaterials[0];
+        if (!material) {
+            material = cc.Material.getInstantiatedBuiltinMaterial('sprite', this);
+            material.define('_USE_MODEL', true);
+            material.define('USE_TEXTURE', true);
+        } else {
+            material = cc.Material.getInstantiatedMaterial(material, this);
+        }
+
+        material.setProperty('texture', texture);
+        this.sharedMaterials[0] = material;
+
+        this.markForUpdateRenderData(false);
+        this.markForRender(false);
+        this.markForCustomIARender(true);
+    };
+    
     armatureDisplayProto.onEnable = function () {
         renderCompProto.onEnable.call(this);
         if (this._armature) {
             this._factory.add(this._armature);
         }
-        this.node._renderFlag &= ~RenderFlow.FLAG_UPDATE_RENDER_DATA;
-        this.node._renderFlag &= ~RenderFlow.FLAG_RENDER;
-        this.node._renderFlag |= RenderFlow.FLAG_CUSTOM_IA_RENDER;
+        this._activateMaterial();
     };
 
     armatureDisplayProto.onDisable = function () {
@@ -433,7 +480,7 @@
         }
     };
 
-    var _onLoad = armatureDisplayProto.onLoad;
+    let _onLoad = armatureDisplayProto.onLoad;
     armatureDisplayProto.onLoad = function () {
         if (_onLoad) {
             _onLoad.call(this);
@@ -441,8 +488,7 @@
 
         this._iaPool = [];
         this._iaPool.push(new middleware.MiddlewareIA());
-        
-        this._iaRenderData = new renderEngine.IARenderData();
+        this._iaRenderData = new cc.IARenderData();
     };
 
     armatureDisplayProto.once = function (eventType, listener, target) {
@@ -463,7 +509,7 @@
         }
     };
 
-    var _onDestroy = armatureDisplayProto.onDestroy;
+    let _onDestroy = armatureDisplayProto.onDestroy;
     armatureDisplayProto.onDestroy = function(){
         _onDestroy.call(this);
         if (this._nativeDisplay) {
@@ -477,46 +523,42 @@
     ////////////////////////////////////////////////////////////
     // override webgl-assembler
     ////////////////////////////////////////////////////////////
-    var _slotColor = cc.color(0, 0, 255, 255);
-    var _boneColor = cc.color(255, 0, 0, 255);
-    var _originColor = cc.color(0, 255, 0, 255);
+    let _slotColor = cc.color(0, 0, 255, 255);
+    let _boneColor = cc.color(255, 0, 0, 255);
+    let _originColor = cc.color(0, 255, 0, 255);
 
-    var _getSlotMaterial = function (comp, tex, src, dst) {
-        var key = tex.url + src + dst;
-        let baseMaterial = comp._material;
+    let _getSlotMaterial = function (comp, tex, src, dst) {
+        let key = tex.url + src + dst;
+        let baseMaterial = comp.sharedMaterials[0];
         if (!baseMaterial) return null;
 
         let materialCache = comp._materialCache;
         let material = materialCache[key];
         
         if (!material) {
+            material = new cc.Material();
+            material.copy(baseMaterial);
 
-            var baseKey = baseMaterial._hash;
-            if (!materialCache[baseKey]) {
-                material = baseMaterial;
-            } else {
-                material = baseMaterial.clone();
-            }
-
-            material.useModel = true;
-            // update texture
-            material.texture = tex;
-            material.useColor = false;
-
+            material.define('_USE_MODEL', true);
+            material.setProperty('texture', tex);
+    
             // update blend function
-            var pass = material._mainTech.passes[0];
+            let pass = material.effect.getDefaultTechnique().passes[0];
+
             pass.setBlend(
+                true,
                 gfx.BLEND_FUNC_ADD,
                 src, dst,
                 gfx.BLEND_FUNC_ADD,
                 src, dst
             );
+            material.updateHash(key);
             materialCache[key] = material;
-            material.updateHash(key);
         }
-        else if (material.texture !== tex) {
-            material.texture = tex;
+        else if (material.getProperty('texture') !== tex) {
+            material.setProperty('texture', tex);
             material.updateHash(key);
+            materialCache[key] = material;
         }
         return material;
     };
@@ -534,14 +576,14 @@
 
     assembler.renderIA = function (comp, renderer) {
 
-        var nativeDisplay = comp._nativeDisplay;
+        let nativeDisplay = comp._nativeDisplay;
         if (!nativeDisplay) {
             return;
         }
 
-        var node = comp.node;
-        var iaPool = comp._iaPool;
-        var poolIdx = 0;
+        let node = comp.node;
+        let iaPool = comp._iaPool;
+        let poolIdx = 0;
 
         if (comp.__preColor__ === undefined || 
         !node.color.equals(comp.__preColor__)) {
@@ -549,37 +591,39 @@
             comp.__preColor__ = node.color;
         }
 
-        var materialData = comp._materialData;
+        let infoOffset = comp._renderInfoOffset[0];
+        let renderInfoMgr = middleware.renderInfoMgr;
+        let renderInfo = renderInfoMgr.renderInfo;
 
-        var materialIdx = 0,realTextureIndex,realTexture;
-        var matLen = materialData[materialIdx++];
-        var indiceOffset = materialData[materialIdx++];
+        let materialIdx = 0,realTextureIndex,realTexture;
+        let matLen = renderInfo[infoOffset + materialIdx++];
         if (matLen == 0) return;
 
-        for (var index = 0; index < matLen; index++) {
-            realTextureIndex = materialData[materialIdx++];
+        for (let index = 0; index < matLen; index++) {
+            realTextureIndex = renderInfo[infoOffset + materialIdx++];
             realTexture = comp.dragonAtlasAsset.getTextureByIndex(realTextureIndex);
             
-            var material = _getSlotMaterial(comp, realTexture,
-                materialData[materialIdx++],
-                materialData[materialIdx++]);
+            let material = _getSlotMaterial(comp, realTexture,
+                renderInfo[infoOffset + materialIdx++],
+                renderInfo[infoOffset + materialIdx++]);
 
-            var glIB = materialData[materialIdx++];
-            var glVB = materialData[materialIdx++];
-            var segmentCount = materialData[materialIdx++];
+            let glIB = renderInfo[infoOffset + materialIdx++];
+            let glVB = renderInfo[infoOffset + materialIdx++];
+            let indiceOffset = renderInfo[infoOffset + materialIdx++];
+            let segmentCount = renderInfo[infoOffset + materialIdx++];
 
-            var ia = iaPool[poolIdx];
+            let ia = iaPool[poolIdx];
             if (!ia) {
                 ia = new middleware.MiddlewareIA();
                 iaPool[poolIdx] = ia;
             }
             ia._start = indiceOffset;
-            ia._count = segmentCount;
+
+            ia.count = segmentCount;
             ia.setVertexFormat(VertexFormat.XY_UV_Color);
             ia.setGLIBID(glIB);
             ia.setGLVBID(glVB);
 
-            indiceOffset += segmentCount;
             poolIdx++;
 
             comp._iaRenderData.ia = ia;
@@ -589,23 +633,23 @@
 
         if (comp.debugBones && comp._debugDraw) {
 
-            var graphics = comp._debugDraw;
+            let graphics = comp._debugDraw;
             graphics.clear();
 
             comp._debugData = comp._debugData || nativeDisplay.getDebugData();
-            var debugData = comp._debugData;
-            var debugIdx = 0;
+            let debugData = comp._debugData;
+            let debugIdx = 0;
 
             graphics.lineWidth = 5;
             graphics.strokeColor = _boneColor;
             graphics.fillColor = _slotColor; // Root bone color is same as slot color.
 
-            var debugBonesLen = debugData[debugIdx++];
-            for (var i = 0; i < debugBonesLen; i += 4) {
-                var bx = debugData[debugIdx++];
-                var by = debugData[debugIdx++];
-                var x = debugData[debugIdx++];
-                var y = debugData[debugIdx++];
+            let debugBonesLen = debugData[debugIdx++];
+            for (let i = 0; i < debugBonesLen; i += 4) {
+                let bx = debugData[debugIdx++];
+                let by = debugData[debugIdx++];
+                let x = debugData[debugIdx++];
+                let y = debugData[debugIdx++];
 
                 // Bone lengths.
                 graphics.moveTo(bx, by);

@@ -26,79 +26,66 @@
     if (window.sp === undefined || window.spine === undefined || window.middleware === undefined) return;
 
     var Skeleton = sp.Skeleton;
-    var renderer = cc.renderer;
-    var renderEngine = renderer.renderEngine;
-    var gfx = renderEngine.gfx;
+    var gfx = cc.gfx;
     var VertexFormat = gfx.VertexFormat;
-    var SpineMaterial = renderEngine.SpineMaterial;
     var assembler = Skeleton._assembler;
     
-    var _slotColor = cc.color(0, 0, 255, 255);
-    var _boneColor = cc.color(255, 0, 0, 255);
-    var _originColor = cc.color(0, 255, 0, 255);
+    let _slotColor = cc.color(0, 0, 255, 255);
+    let _boneColor = cc.color(255, 0, 0, 255);
+    let _originColor = cc.color(0, 255, 0, 255);
     
-    var _getSlotMaterial = function (comp, tex, src, dst) {
+    let _getSlotMaterial = function (comp, tex, src, dst) {
     
-        var key = tex.url + src + dst;
+        let key = tex.url + src + dst;
 
-        comp._material = comp._material || new SpineMaterial();
-        let baseMaterial = comp._material;
+        let baseMaterial = comp.sharedMaterials[0];
+        if (!baseMaterial) return null;
+
         let materialCache = comp._materialCache;
         let material = materialCache[key];
 
         if (!material) {
+            material = new cc.Material();
+            material.copy(baseMaterial);
 
-            var baseKey = baseMaterial._hash;
-            if (!materialCache[baseKey]) {
-                material = baseMaterial;
-            } else {
-                material = baseMaterial.clone();
-            }
-
-            material.useModel = true;
-            // update texture
-            material.texture = tex;
-            material.useTint = comp.useTint;
+            material.define('_USE_MODEL', true);
+            material.define('USE_TINT', comp.useTint);
+            material.setProperty('texture', tex);
     
             // update blend function
-            var pass = material._mainTech.passes[0];
+            let pass = material.effect.getDefaultTechnique().passes[0];
             pass.setBlend(
+                true,
                 gfx.BLEND_FUNC_ADD,
                 src, dst,
                 gfx.BLEND_FUNC_ADD,
                 src, dst
             );
-
-            if (materialCache[material._hash]) {
-                delete materialCache[material._hash];
-            }
+            material.updateHash(key);
             materialCache[key] = material;
-            material.updateHash(key);
         }
-        else if (material.texture !== tex) {
-            if (materialCache[material._hash]) {
-                delete materialCache[material._hash];
-            }
-            material.texture = tex;
+        else if (material.getProperty('texture') !== tex) {
+            material.setProperty('texture', tex);
             material.updateHash(key);
+            materialCache[key] = material;
         }
         return material;
-    }
+    };
     
     // native enable useModel
     assembler.useModel = true;
 
     assembler.genRenderDatas = function (comp, batchData) {
-    }
+    };
     
     assembler.updateRenderData = function (comp, batchData) {
-    }
+    };
     
     assembler.renderIA = function (comp, renderer) {
-        var nativeSkeleton = comp._skeleton;
+        let nativeSkeleton = comp._skeleton;
         if (!nativeSkeleton) return;
 
-        var node = comp.node;
+        let node = comp.node;
         if (!node) return;
 
         if (comp.__preColor__ === undefined || !node.color.equals(comp.__preColor__)) {
@@ -106,42 +93,44 @@
             comp.__preColor__ = node.color;
         }
 
-        var iaPool = comp._iaPool;
-        var poolIdx = 0;
+        let iaPool = comp._iaPool;
+        let poolIdx = 0;
 
-        var materialData = comp._materialData;
+        let infoOffset = comp._renderInfoOffset[0];
+        let renderInfoMgr = middleware.renderInfoMgr;
+        let renderInfo = renderInfoMgr.renderInfo;
 
-        var materialIdx = 0,realTextureIndex,realTexture;
-        var matLen = materialData[materialIdx++];
-        var indiceOffset = materialData[materialIdx++];
-        var useTint = comp.useTint;
+        let materialIdx = 0,realTextureIndex,realTexture;
+        let matLen = renderInfo[infoOffset + materialIdx++];
+        let useTint = comp.useTint;
 
         if (matLen == 0) return;
 
-        for (var index = 0; index < matLen; index++) {
-            realTextureIndex = materialData[materialIdx++];
+        for (let index = 0; index < matLen; index++) {
+            realTextureIndex = renderInfo[infoOffset + materialIdx++];
             realTexture = comp.skeletonData.textures[realTextureIndex];
             
-            var material = _getSlotMaterial(comp, realTexture,
-                materialData[materialIdx++],
-                materialData[materialIdx++]);
+            let material = _getSlotMaterial(comp, realTexture,
+                renderInfo[infoOffset + materialIdx++],
+                renderInfo[infoOffset + materialIdx++]);
 
-            var glIB = materialData[materialIdx++];
-            var glVB = materialData[materialIdx++];
-            var segmentCount = materialData[materialIdx++];
+            let glIB = renderInfo[infoOffset + materialIdx++];
+            let glVB = renderInfo[infoOffset + materialIdx++];
+            let indiceOffset = renderInfo[infoOffset + materialIdx++];
+            let segmentCount = renderInfo[infoOffset + materialIdx++];
 
-            var ia = iaPool[poolIdx];
+            let ia = iaPool[poolIdx];
             if (!ia) {
                 ia = new middleware.MiddlewareIA();
                 iaPool[poolIdx] = ia;
             }
             ia._start = indiceOffset;
-            ia._count = segmentCount;
+            
+            ia.count = segmentCount;
             ia.setVertexFormat(useTint? VertexFormat.XY_UV_Two_Color : VertexFormat.XY_UV_Color);
             ia.setGLIBID(glIB);
             ia.setGLVBID(glVB);
 
-            indiceOffset += segmentCount;
             poolIdx ++;
 
             comp._iaRenderData.ia = ia;
@@ -151,20 +140,20 @@
     
         if ((comp.debugBones || comp.debugSlots) && comp._debugRenderer) {
     
-            var graphics = comp._debugRenderer;
+            let graphics = comp._debugRenderer;
             graphics.clear();
     
             comp._debugData = comp._debugData || nativeSkeleton.getDebugData();
-            var debugData = comp._debugData;
-            var debugIdx = 0;
+            let debugData = comp._debugData;
+            let debugIdx = 0;
     
             if (comp.debugSlots) {
                 // Debug Slot
                 graphics.strokeColor = _slotColor;
                 graphics.lineWidth = 5;
     
-                var debugSlotsLen = debugData[debugIdx++];
-                for(var i=0;i<debugSlotsLen;i+=8){
+                let debugSlotsLen = debugData[debugIdx++];
+                for(let i=0; i<debugSlotsLen; i += 8){
                     graphics.moveTo(debugData[debugIdx++], debugData[debugIdx++]);
                     graphics.lineTo(debugData[debugIdx++], debugData[debugIdx++]);
                     graphics.lineTo(debugData[debugIdx++], debugData[debugIdx++]);
@@ -180,12 +169,12 @@
                 graphics.strokeColor = _boneColor;
                 graphics.fillColor = _slotColor; // Root bone color is same as slot color.
     
-                var debugBonesLen = debugData[debugIdx++];
-                for (var i = 0; i < debugBonesLen; i += 4) {
-                    var bx = debugData[debugIdx++];
-                    var by = debugData[debugIdx++];
-                    var x = debugData[debugIdx++];
-                    var y = debugData[debugIdx++];
+                let debugBonesLen = debugData[debugIdx++];
+                for (let i = 0; i < debugBonesLen; i += 4) {
+                    let bx = debugData[debugIdx++];
+                    let by = debugData[debugIdx++];
+                    let x = debugData[debugIdx++];
+                    let y = debugData[debugIdx++];
     
                     // Bone lengths.
                     graphics.moveTo(bx, by);
@@ -201,6 +190,6 @@
                 }
             }
         }
-    }
+    };
 
 })();
